@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>milvasic tools</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      background: #f6f8fa;
+      color: #24292f;
+      line-height: 1.6;
+      padding: 2rem 1rem;
+    }
+
+    header {
+      max-width: 720px;
+      margin: 0 auto 2.5rem;
+    }
+
+    header h1 {
+      font-size: 1.75rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    header p {
+      color: #57606a;
+      font-size: 1rem;
+    }
+
+    .tool-list {
+      max-width: 720px;
+      margin: 0 auto;
+      display: grid;
+      gap: 1rem;
+    }
+
+    .tool-card {
+      background: #ffffff;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    .tool-info { flex: 1; min-width: 0; }
+
+    .tool-name {
+      font-size: 1rem;
+      font-weight: 600;
+      color: #0969da;
+      text-decoration: none;
+    }
+
+    .tool-name:hover { text-decoration: underline; }
+
+    .tool-desc {
+      margin-top: 0.25rem;
+      font-size: 0.9rem;
+      color: #57606a;
+    }
+
+    .tool-link {
+      flex-shrink: 0;
+      font-size: 0.8rem;
+      color: #57606a;
+      text-decoration: none;
+      border: 1px solid #d0d7de;
+      border-radius: 6px;
+      padding: 0.2rem 0.6rem;
+      white-space: nowrap;
+    }
+
+    .tool-link:hover {
+      background: #f3f4f6;
+      border-color: #afb8c1;
+    }
+
+    footer {
+      max-width: 720px;
+      margin: 2.5rem auto 0;
+      font-size: 0.8rem;
+      color: #8c959f;
+      text-align: center;
+    }
+
+    footer a { color: #57606a; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>milvasic tools</h1>
+    <p>A collection of single-file CLI tools for developer workflows.</p>
+  </header>
+
+  <ul class="tool-list" role="list">
+
+    <li class="tool-card">
+      <div class="tool-info">
+        <a class="tool-name" href="https://github.com/milvasic/diffcheck">diffcheck</a>
+        <p class="tool-desc">A .NET 10 tool for comparing CSV and XLSX files with color-coded HTML diff reports.</p>
+      </div>
+      <a class="tool-link" href="https://github.com/milvasic/diffcheck">GitHub &rarr;</a>
+    </li>
+
+    <li class="tool-card">
+      <div class="tool-info">
+        <a class="tool-name" href="https://github.com/milvasic/motd">motd</a>
+        <p class="tool-desc">A single-file Bash script that displays a system information dashboard at login.</p>
+      </div>
+      <a class="tool-link" href="https://github.com/milvasic/motd">GitHub &rarr;</a>
+    </li>
+
+    <li class="tool-card">
+      <div class="tool-info">
+        <a class="tool-name" href="https://github.com/milvasic/mcli">mcli</a>
+        <p class="tool-desc">A single-file Bash CLI for managing Docker Compose services.</p>
+      </div>
+      <a class="tool-link" href="https://github.com/milvasic/mcli">GitHub &rarr;</a>
+    </li>
+
+    <li class="tool-card">
+      <div class="tool-info">
+        <a class="tool-name" href="https://github.com/milvasic/tinit">tinit</a>
+        <p class="tool-desc">A single-file Bash CLI that sets up a Debian/Ubuntu terminal environment from scratch.</p>
+      </div>
+      <a class="tool-link" href="https://github.com/milvasic/tinit">GitHub &rarr;</a>
+    </li>
+
+    <li class="tool-card">
+      <div class="tool-info">
+        <a class="tool-name" href="https://github.com/milvasic/distill">distill</a>
+        <p class="tool-desc">A single-file Bash CLI that generates a self-contained install.sh for any CLI tool.</p>
+      </div>
+      <a class="tool-link" href="https://github.com/milvasic/distill">GitHub &rarr;</a>
+    </li>
+
+    <li class="tool-card">
+      <div class="tool-info">
+        <a class="tool-name" href="https://github.com/milvasic/syskeeper">syskeeper</a>
+        <p class="tool-desc">Coming soon.</p>
+      </div>
+      <a class="tool-link" href="https://github.com/milvasic/syskeeper">GitHub &rarr;</a>
+    </li>
+
+  </ul>
+
+  <footer>
+    <p>
+      <a href="https://github.com/milvasic/mtoolbox">milvasic/mtoolbox</a>
+    </p>
+  </footer>
+</body>
+</html>
