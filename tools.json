@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "updated_at": "2026-05-26T00:00:00Z",
+  "tools": [
+    {
+      "name": "mcli",
+      "description": "A single-file Bash CLI for managing Docker Compose services.",
+      "homepage": "https://github.com/milvasic/mcli",
+      "asset_type": "script",
+      "install_url": "https://raw.githubusercontent.com/milvasic/mcli/refs/heads/main/install.sh",
+      "binary_name": "mcli",
+      "remote_version_url": "https://raw.githubusercontent.com/milvasic/mcli/refs/heads/main/mcli",
+      "remote_version_pattern": "^VERSION=\"([0-9]+\\.[0-9]+\\.[0-9]+)\"",
+      "installed_version_command": "mcli --version"
+    },
+    {
+      "name": "motd",
+      "description": "A single-file Bash script that displays a system information dashboard at login.",
+      "homepage": "https://github.com/milvasic/motd",
+      "asset_type": "script",
+      "install_url": "https://raw.githubusercontent.com/milvasic/motd/refs/heads/main/install.sh",
+      "binary_name": "motd",
+      "remote_version_url": "https://raw.githubusercontent.com/milvasic/motd/refs/heads/main/motd",
+      "remote_version_pattern": "^VERSION=\"([0-9]+\\.[0-9]+\\.[0-9]+)\"",
+      "installed_version_command": "motd --version"
+    },
+    {
+      "name": "tinit",
+      "description": "A single-file Bash CLI that sets up a Debian/Ubuntu terminal environment from scratch.",
+      "homepage": "https://github.com/milvasic/tinit",
+      "asset_type": "script",
+      "install_url": "https://raw.githubusercontent.com/milvasic/tinit/refs/heads/main/install.sh",
+      "binary_name": "tinit",
+      "remote_version_url": "https://raw.githubusercontent.com/milvasic/tinit/refs/heads/main/tinit",
+      "remote_version_pattern": "^VERSION=\"([0-9]+\\.[0-9]+\\.[0-9]+)\"",
+      "installed_version_command": "tinit --version"
+    },
+    {
+      "name": "distill",
+      "description": "A single-file Bash CLI that generates a self-contained install.sh for any CLI tool.",
+      "homepage": "https://github.com/milvasic/distill",
+      "asset_type": "script",
+      "install_url": "https://raw.githubusercontent.com/milvasic/distill/refs/heads/main/install.sh",
+      "binary_name": "distill",
+      "remote_version_url": "https://raw.githubusercontent.com/milvasic/distill/refs/heads/main/distill",
+      "remote_version_pattern": "^VERSION=\"([0-9]+\\.[0-9]+\\.[0-9]+)\"",
+      "installed_version_command": "distill version"
+    },
+    {
+      "name": "mtoolbox",
+      "description": "A single-file Bash CLI for managing and updating milvasic tools.",
+      "homepage": "https://github.com/milvasic/mtoolbox",
+      "asset_type": "script",
+      "install_url": "https://raw.githubusercontent.com/milvasic/mtoolbox/refs/heads/main/install.sh",
+      "binary_name": "mtoolbox",
+      "remote_version_url": "https://raw.githubusercontent.com/milvasic/mtoolbox/refs/heads/main/mtoolbox",
+      "remote_version_pattern": "^VERSION=\"([0-9]+\\.[0-9]+\\.[0-9]+)\"",
+      "installed_version_command": "mtoolbox --version"
+    }
+  ]
+}

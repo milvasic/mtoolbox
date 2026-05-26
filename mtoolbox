@@ -1,0 +1,487 @@
+#!/usr/bin/env bash
+# mtoolbox — manage and update milvasic tools
+# https://github.com/milvasic/mtoolbox
+
+set -euo pipefail
+
+VERSION="0.1.0"
+
+MANIFEST_URL="https://milvasic.github.io/mtoolbox/tools.json"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/mtoolbox"
+MANIFEST_CACHE="${CACHE_DIR}/tools.json"
+VERSIONS_CACHE_DIR="${CACHE_DIR}/versions"
+MANIFEST_TTL=86400  # 24 hours
+VERSION_TTL=21600   # 6 hours
+
+# ── Help ──────────────────────────────────────────────────────────────────────
+help() {
+	colorize >&2 <<'EOF'
+A single-file Bash CLI for managing and updating milvasic tools.
+
+Usage: mtoolbox <command> [tools...] [--yes] [--refresh]
+
+Commands:
+  list                 # List all catalog tools with installed/version status
+  install <tools..>    # Install one or more tools from the catalog
+  update               # Check installed tools for available upgrades (read-only)
+  upgrade [tools..]    # Apply upgrades (all outdated, or named subset)
+  refresh              # Force-refresh manifest cache
+  version, --version   # Print mtoolbox version
+  help, --help         # Show help
+
+Options:
+  --yes, -y            # CI-friendly, skip prompts
+  --refresh            # Bypass cache for this invocation
+
+Examples:
+  mtoolbox list
+  mtoolbox install mcli motd
+  mtoolbox update
+  mtoolbox upgrade
+  mtoolbox upgrade mcli
+EOF
+	exit 1
+}
+
+# ── Colors & logging ──────────────────────────────────────────────────────────
+if [ -t 1 ]; then
+	RED=$'\033[0;31m'
+	GREEN=$'\033[0;32m'
+	YELLOW=$'\033[0;33m'
+	CYAN=$'\033[0;36m'
+	GRAY=$'\033[0;90m'
+	BOLD=$'\033[1m'
+	RESET=$'\033[0m'
+else
+	RED=""
+	GREEN=""
+	YELLOW=""
+	CYAN=""
+	GRAY=""
+	BOLD=""
+	RESET=""
+fi
+
+log()  { printf "\n${BOLD}=== %s ===${RESET}\n" "$1" >&2; }
+error(){ printf "${RED}ERROR:${RESET} %s\n" "$1" >&2; }
+ok()   { printf "${GREEN}%s${RESET}\n" "$1"; }
+warn() { printf "${YELLOW}WARNING:${RESET} %s\n" "$1" >&2; }
+
+# ── Help colorizer ───────────────────────────────────────────────────────────
+colorize_line() {
+	sed \
+		-e "s/\\(^\\|[^[:alnum:]_'-]\\)\\(mtoolbox\\)\\([^[:alnum:]_'-]\\|$\\)/\\1${GREEN}\\2${RESET}\\3/g" \
+		-e "s/\\(^\\|[^[:alnum:]_'-]\\)\\(list\\|install\\|update\\|upgrade\\|refresh\\|version\\|help\\)\\([^[:alnum:]_'-]\\|$\\)/\\1${YELLOW}\\2${RESET}\\3/g" \
+		-e "s/--[a-z][a-z-]*/${CYAN}&${RESET}/g" \
+		-e "s/\([ ,]\)\(-[a-z]\)/\\1${CYAN}\\2${RESET}/g"
+}
+
+colorize() {
+	local line pre post
+	while IFS= read -r line; do
+		if [[ "$line" == *'#'* ]]; then
+			pre="${line%%#*}"
+			post="${line#*#}"
+			pre="$(printf '%s' "$pre" | colorize_line)"
+			printf '%s%s#%s%s\n' "$pre" "$GREEN" "$post" "$RESET"
+		else
+			printf '%s\n' "$line" | colorize_line
+		fi
+	done
+}
+
+# ── Prerequisites ─────────────────────────────────────────────────────────────
+check_jq() {
+	if ! command -v jq >/dev/null 2>&1; then
+		error "jq is required but not installed."
+		printf '%s\n' "  Install it with: ${CYAN}sudo apt install jq${RESET}" >&2
+		exit 1
+	fi
+}
+
+# ── HTTP ──────────────────────────────────────────────────────────────────────
+fetch_url() {
+	if command -v curl >/dev/null 2>&1; then
+		curl -fsSL "$1"
+	elif command -v wget >/dev/null 2>&1; then
+		wget -qO- "$1"
+	else
+		error "Neither curl nor wget found. Please install one and try again."
+		exit 1
+	fi
+}
+
+# ── Cache ─────────────────────────────────────────────────────────────────────
+is_cache_valid() {
+	local file="$1" ttl="$2"
+	[ -f "$file" ] || return 1
+	local now mtime age
+	now=$(date +%s)
+	mtime=$(stat -c %Y "$file" 2>/dev/null) || return 1
+	age=$(( now - mtime ))
+	[ "$age" -lt "$ttl" ]
+}
+
+load_manifest() {
+	if [ "$do_refresh" = false ] && is_cache_valid "$MANIFEST_CACHE" "$MANIFEST_TTL"; then
+		cat "$MANIFEST_CACHE"
+		return
+	fi
+
+	local content
+	if content=$(fetch_url "$MANIFEST_URL" 2>/dev/null); then
+		mkdir -p "$CACHE_DIR"
+		printf '%s\n' "$content" > "$MANIFEST_CACHE"
+		printf '%s\n' "$content"
+	else
+		if [ -f "$MANIFEST_CACHE" ]; then
+			warn "Failed to fetch manifest; using cached version."
+			cat "$MANIFEST_CACHE"
+		else
+			error "Failed to fetch manifest and no cache exists."
+			exit 1
+		fi
+	fi
+}
+
+# Compare two semver strings (X.Y.Z). Prints: greater | lesser | equal.
+version_compare() {
+	local v1="$1" v2="$2"
+
+	if [ "$v1" = "$v2" ]; then
+		echo "equal"
+		return
+	fi
+
+	local i n1 n2
+	for i in 1 2 3; do
+		n1="$(echo "$v1" | cut -d. -f"$i")"
+		n2="$(echo "$v2" | cut -d. -f"$i")"
+		n1="${n1:-0}"
+		n2="${n2:-0}"
+		if [ "$n1" -gt "$n2" ]; then
+			echo "greater"
+			return
+		elif [ "$n1" -lt "$n2" ]; then
+			echo "lesser"
+			return
+		fi
+	done
+
+	echo "equal"
+}
+
+# Get remote version for a tool (from cache or network).
+get_remote_version_cached() {
+	local name="$1" url="$2" pattern="$3"
+	local cache_file="${VERSIONS_CACHE_DIR}/${name}"
+
+	if [ "$do_refresh" = false ] && is_cache_valid "$cache_file" "$VERSION_TTL"; then
+		cat "$cache_file"
+		return
+	fi
+
+	local content version
+	if content=$(fetch_url "$url" 2>/dev/null); then
+		version=$(printf '%s\n' "$content" | grep -Em1 -- "$pattern" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+		mkdir -p "$VERSIONS_CACHE_DIR"
+		printf '%s\n' "$version" > "$cache_file"
+		printf '%s' "$version"
+	else
+		if [ -f "$cache_file" ]; then
+			warn "Failed to fetch version for ${name}; using cached version." >&2
+			cat "$cache_file"
+		else
+			printf ""
+		fi
+	fi
+}
+
+# Get installed version for a tool. Prints: not_installed | unknown | X.Y.Z
+get_installed_version() {
+	local binary="$1" cmd="$2"
+	if ! command -v "$binary" >/dev/null 2>&1; then
+		printf "not_installed"
+		return
+	fi
+	local ver
+	ver=$(eval "$cmd" 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)
+	if [ -z "$ver" ]; then
+		printf "unknown"
+	else
+		printf "%s" "$ver"
+	fi
+}
+
+# Run install.sh for a tool via curl/bash.
+run_install() {
+	local name="$1" install_url="$2"
+	log "Installing/upgrading ${name}"
+	local flags=""
+	[ "$auto_yes" = true ] && flags="--yes"
+	if command -v curl >/dev/null 2>&1; then
+		bash -c "$(curl -fsSL "${install_url}")" -- $flags
+	elif command -v wget >/dev/null 2>&1; then
+		bash -c "$(wget -qO- "${install_url}")" -- $flags
+	else
+		error "Neither curl nor wget found. Please install one and try again."
+		exit 1
+	fi
+}
+
+# ── list ──────────────────────────────────────────────────────────────────────
+cmd_list() {
+	local manifest
+	manifest=$(load_manifest)
+
+	local names
+	mapfile -t names < <(printf '%s\n' "$manifest" | jq -r '.tools[].name')
+
+	printf "${BOLD}%-20s %-15s %s${RESET}\n" "Tool" "Installed" "Description"
+	printf "${BOLD}%-20s %-15s %s${RESET}\n" "----" "---------" "-----------"
+
+	local name tool binary_name cmd description installed_ver
+	for name in "${names[@]}"; do
+		tool=$(printf '%s\n' "$manifest" | jq -r --arg n "$name" '.tools[] | select(.name == $n)')
+		binary_name=$(printf '%s\n' "$tool" | jq -r '.binary_name')
+		cmd=$(printf '%s\n' "$tool" | jq -r '.installed_version_command')
+		description=$(printf '%s\n' "$tool" | jq -r '.description')
+
+		installed_ver=$(get_installed_version "$binary_name" "$cmd")
+
+		case "$installed_ver" in
+		not_installed)
+			printf "${GRAY}%-20s %-15s %s${RESET}\n" "$name" "not installed" "$description"
+			;;
+		unknown)
+			printf "${YELLOW}%-20s %-15s %s${RESET}\n" "$name" "unknown" "$description"
+			;;
+		*)
+			printf "${GREEN}%-20s %-15s %s${RESET}\n" "$name" "v${installed_ver}" "$description"
+			;;
+		esac
+	done
+}
+
+# ── install ───────────────────────────────────────────────────────────────────
+cmd_install() {
+	if [ $# -eq 0 ]; then
+		error "Usage: mtoolbox install <tool1> [tool2 ...]"
+		exit 1
+	fi
+
+	local manifest
+	manifest=$(load_manifest)
+
+	local name tool install_url
+	for name in "$@"; do
+		tool=$(printf '%s\n' "$manifest" | jq -r --arg n "$name" '.tools[] | select(.name == $n)')
+		if [ -z "$tool" ] || [ "$tool" = "null" ]; then
+			error "Unknown tool: ${name}"
+			exit 1
+		fi
+		install_url=$(printf '%s\n' "$tool" | jq -r '.install_url')
+		run_install "$name" "$install_url"
+	done
+}
+
+# ── update (read-only) ────────────────────────────────────────────────────────
+cmd_update() {
+	local manifest
+	manifest=$(load_manifest)
+
+	local names
+	mapfile -t names < <(printf '%s\n' "$manifest" | jq -r '.tools[].name')
+
+	printf "${BOLD}%-20s %-15s %-15s %s${RESET}\n" "Tool" "Installed" "Latest" "Status"
+	printf "${BOLD}%-20s %-15s %-15s %s${RESET}\n" "----" "---------" "------" "------"
+
+	local name tool binary_name cmd remote_version_url remote_version_pattern installed_ver remote_ver cmp
+	for name in "${names[@]}"; do
+		tool=$(printf '%s\n' "$manifest" | jq -r --arg n "$name" '.tools[] | select(.name == $n)')
+		binary_name=$(printf '%s\n' "$tool" | jq -r '.binary_name')
+		cmd=$(printf '%s\n' "$tool" | jq -r '.installed_version_command')
+		remote_version_url=$(printf '%s\n' "$tool" | jq -r '.remote_version_url')
+		remote_version_pattern=$(printf '%s\n' "$tool" | jq -r '.remote_version_pattern')
+
+		installed_ver=$(get_installed_version "$binary_name" "$cmd")
+
+		if [ "$installed_ver" = "not_installed" ]; then
+			printf "${GRAY}%-20s %-15s %-15s %s${RESET}\n" "$name" "not installed" "-" "not installed"
+			continue
+		fi
+
+		remote_ver=$(get_remote_version_cached "$name" "$remote_version_url" "$remote_version_pattern")
+
+		if [ -z "$remote_ver" ]; then
+			printf "${YELLOW}%-20s %-15s %-15s %s${RESET}\n" "$name" \
+				"${installed_ver}" "-" "remote version unavailable"
+			continue
+		fi
+
+		if [ "$installed_ver" = "unknown" ]; then
+			printf "${YELLOW}%-20s %-15s %-15s %s${RESET}\n" "$name" "unknown" "v${remote_ver}" "version unknown"
+			continue
+		fi
+
+		cmp=$(version_compare "$installed_ver" "$remote_ver")
+
+		case "$cmp" in
+		equal)
+			printf "${GREEN}%-20s %-15s %-15s %s${RESET}\n" "$name" "v${installed_ver}" "v${remote_ver}" "up to date"
+			;;
+		lesser)
+			printf "${YELLOW}${BOLD}%-20s %-15s %-15s %s${RESET}\n" "$name" "v${installed_ver}" "v${remote_ver}" "update available"
+			;;
+		greater)
+			printf "${YELLOW}%-20s %-15s %-15s %s${RESET}\n" "$name" "v${installed_ver}" "v${remote_ver}" "newer than remote"
+			;;
+		esac
+	done
+}
+
+# ── upgrade ───────────────────────────────────────────────────────────────────
+cmd_upgrade() {
+	local manifest
+	manifest=$(load_manifest)
+
+	local names=()
+	if [ $# -eq 0 ]; then
+		mapfile -t names < <(printf '%s\n' "$manifest" | jq -r '.tools[].name')
+	else
+		names=("$@")
+	fi
+
+	local upgraded=0
+	local name tool binary_name cmd remote_version_url remote_version_pattern install_url installed_ver remote_ver cmp
+	for name in "${names[@]}"; do
+		tool=$(printf '%s\n' "$manifest" | jq -r --arg n "$name" '.tools[] | select(.name == $n)')
+		if [ -z "$tool" ] || [ "$tool" = "null" ]; then
+			error "Unknown tool: ${name}"
+			exit 1
+		fi
+
+		binary_name=$(printf '%s\n' "$tool" | jq -r '.binary_name')
+		cmd=$(printf '%s\n' "$tool" | jq -r '.installed_version_command')
+		remote_version_url=$(printf '%s\n' "$tool" | jq -r '.remote_version_url')
+		remote_version_pattern=$(printf '%s\n' "$tool" | jq -r '.remote_version_pattern')
+		install_url=$(printf '%s\n' "$tool" | jq -r '.install_url')
+
+		installed_ver=$(get_installed_version "$binary_name" "$cmd")
+
+		if [ "$installed_ver" = "not_installed" ]; then
+			printf "${GRAY}%s: not installed, skipping${RESET}\n" "$name" >&2
+			continue
+		fi
+
+		remote_ver=$(get_remote_version_cached "$name" "$remote_version_url" "$remote_version_pattern")
+
+		if [ -z "$remote_ver" ]; then
+			warn "${name}: could not determine remote version, skipping"
+			continue
+		fi
+
+		if [ "$installed_ver" = "unknown" ]; then
+			warn "${name}: installed version unknown, skipping"
+			continue
+		fi
+
+		cmp=$(version_compare "$installed_ver" "$remote_ver")
+
+		case "$cmp" in
+		equal)
+			printf "${GREEN}%s: already up to date (v%s)${RESET}\n" "$name" "$installed_ver" >&2
+			;;
+		lesser)
+			run_install "$name" "$install_url"
+			upgraded=$(( upgraded + 1 ))
+			;;
+		greater)
+			warn "${name}: installed (v${installed_ver}) is newer than remote (v${remote_ver}), skipping"
+			;;
+		esac
+	done
+
+	if [ "$upgraded" -eq 0 ]; then
+		ok "All tools are up to date."
+	fi
+}
+
+# ── refresh ───────────────────────────────────────────────────────────────────
+cmd_refresh() {
+	log "Refreshing manifest cache"
+	local content
+	if content=$(fetch_url "$MANIFEST_URL" 2>/dev/null); then
+		mkdir -p "$CACHE_DIR"
+		printf '%s\n' "$content" > "$MANIFEST_CACHE"
+		rm -rf "$VERSIONS_CACHE_DIR"
+		ok "Manifest cache refreshed."
+	else
+		error "Failed to fetch manifest."
+		exit 1
+	fi
+}
+
+# ── Main dispatch ─────────────────────────────────────────────────────────────
+COMMAND="${1:-}"
+[ $# -ge 1 ] && shift
+
+auto_yes=false
+do_refresh=false
+tool_args=()
+
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+	--yes | -y)
+		auto_yes=true
+		shift
+		;;
+	--refresh)
+		do_refresh=true
+		shift
+		;;
+	-*)
+		error "Unknown option: $1"
+		exit 1
+		;;
+	*)
+		tool_args+=("$1")
+		shift
+		;;
+	esac
+done
+
+case "${COMMAND}" in
+list)
+	check_jq
+	cmd_list
+	;;
+install)
+	check_jq
+	cmd_install "${tool_args[@]}"
+	;;
+update)
+	check_jq
+	cmd_update
+	;;
+upgrade)
+	check_jq
+	cmd_upgrade "${tool_args[@]}"
+	;;
+refresh)
+	cmd_refresh
+	;;
+version | --version)
+	echo "$VERSION"
+	;;
+help | --help | -h)
+	help
+	;;
+"")
+	help
+	;;
+*)
+	error "Unknown command: ${COMMAND}"
+	help
+	;;
+esac
