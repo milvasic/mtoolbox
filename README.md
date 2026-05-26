@@ -1,8 +1,58 @@
 # mtoolbox
 
-A static discovery page for all [milvasic](https://github.com/milvasic) CLI tools, hosted on GitHub Pages.
+A single-file Bash CLI for managing and updating milvasic tools, plus a static discovery page hosted on GitHub Pages.
 
 **Live:** https://milvasic.github.io/mtoolbox/
+
+## Install
+
+```sh
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/milvasic/mtoolbox/refs/heads/main/install.sh)"
+```
+
+## Usage
+
+```
+mtoolbox <command> [tools...] [--yes] [--refresh]
+
+Commands:
+  list                 List all catalog tools with installed/version status
+  install <tools..>    Install one or more tools from the catalog
+  update               Check installed tools for available upgrades (read-only)
+  upgrade [tools..]    Apply upgrades (all outdated, or named subset)
+  refresh              Force-refresh manifest cache
+  version, --version   Print mtoolbox version
+  help, --help         Show help
+
+Options:
+  --yes, -y            CI-friendly, skip prompts
+  --refresh            Bypass cache for this invocation
+```
+
+### Examples
+
+```sh
+# See which tools are installed and their versions
+mtoolbox list
+
+# Install tools from the catalog
+mtoolbox install mcli motd
+
+# Check for available updates (read-only)
+mtoolbox update
+
+# Upgrade all outdated tools
+mtoolbox upgrade
+
+# Upgrade a specific tool
+mtoolbox upgrade mcli
+
+# Self-upgrade mtoolbox
+mtoolbox upgrade mtoolbox
+
+# Force-refresh the manifest cache
+mtoolbox refresh
+```
 
 ## Tools
 
